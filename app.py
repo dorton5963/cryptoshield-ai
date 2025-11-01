@@ -2,6 +2,54 @@ from flask import Flask, jsonify, request, render_template_string
 import requests
 import sqlite3
 import datetime
+import os
+
+if __name__ == '__main__':
+    import os
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port, debug=False)
+
+@app.route('/coinbase-payment')
+def coinbase_payment():
+    # Your Coinbase Commerce API Key
+    api_key = "7bce8152-0224-4970-a5de-267bd06a2e34"  # Replace with actual key
+    
+    charge_data = {
+        "name": "CryptoShield AI Premium",
+        "description": "Monthly subscription - AI scam protection",
+        "pricing_type": "fixed_price",
+        "local_price": {
+            "amount": "4.99",
+            "currency": "USD"
+        },
+        "metadata": {
+            "customer_name": "premium_user"
+        }
+    }
+    
+    headers = {
+        "X-CC-Api-Key": api_key,
+        "X-CC-Version": "2018-03-22",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.post(
+            "https://api.commerce.coinbase.com/charges",
+            json=charge_data,
+            headers=headers,
+            timeout=30
+        )
+        
+        if response.status_code == 201:
+            payment_info = response.json()
+            return redirect(payment_info['data']['hosted_url'])
+        else:
+            return f"Payment system error: {response.status_code}"
+            
+    except Exception as e:
+        return f"Payment temporarily unavailable: {str(e)}"
+
 
 app = Flask(__name__)
 
@@ -73,6 +121,16 @@ HTML_TEMPLATE = """
 </body>
 </html>
 """
+@app.route('/premium')
+def premium():
+    return """
+    <h3>🚀 CryptoShield AI Premium - $4.99/month</h3>
+    <p>Choose payment method:</p>
+    <a href="/coinbase-payment" style="background: #0052FF; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px;">
+        Pay with Coinbase (Crypto)
+    </a>
+    <p><em>Instant setup - Your existing Coinbase account works</em></p>
+    """
 
 @app.route('/')
 def home():
