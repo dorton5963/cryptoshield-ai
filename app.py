@@ -194,7 +194,9 @@ def coinbase_payment():
         "metadata": {
             "customer_id": "premium_user",
             "service": "cryptoshield_ai"
-        }
+        },
+        "redirect_url": "https://cryptoshield-ai.onrender.com/payment-success",
+        "cancel_url": "https://cryptoshield-ai.onrender.com/payment-cancel"
     }
     
     headers = {
@@ -215,20 +217,31 @@ def coinbase_payment():
             payment_info = response.json()
             return redirect(payment_info['data']['hosted_url'])
         else:
-            return f"""
+            return """
             <h3>Payment System Temporarily Unavailable</h3>
-            <p>Error: {response.status_code} - {response.text}</p>
+            <p>Error: """ + str(response.status_code) + """ - """ + response.text + """</p>
             <p>Please use manual crypto payment option above.</p>
             <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
             """
             
     except Exception as e:
-        return f"""
+        return """
         <h3>Payment System Error</h3>
-        <p>Error: {str(e)}</p>
+        <p>Error: """ + str(e) + """</p>
         <p>Please use manual crypto payment option.</p>
         <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
-        """
+        """    
+
+
+@app.route('/payment-cancel')
+def payment_cancel():
+    return """
+    <h2>❌ Payment Cancelled</h2>
+    <p>Your payment was cancelled. You can try again anytime.</p>
+    <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
+    """
+
+
 
 @app.route('/success')
 def success():
@@ -280,9 +293,6 @@ def coinbase_webhook():
         
         print(f"💰 PAYMENT CONFIRMED: ${amount} from {customer_email}")
         
-        # TODO: Activate premium for this customer
-        # Store in database, send welcome email, etc.
-        
     elif event_type == 'charge:failed':
         print(f"❌ PAYMENT FAILED: {data}")
     elif event_type == 'charge:created':
@@ -294,10 +304,11 @@ def coinbase_webhook():
 def payment_success():
     return """
     <h2>✅ Payment Successful!</h2>
-    <p>Welcome to CryptoShield AI Premium!</p>
-    <p>Your account is being activated...</p>
-    <p>Check your email for confirmation.</p>
-    <button onclick="window.location.href='/'">← Start Using Premium Features</button>
+    <p>Thank you for subscribing to CryptoShield AI Premium!</p>
+    <p>Your account will be activated within 1 hour.</p>
+    <p>For any questions, contact: dan@cryptoshield-ai.com</p>
+    <button onclick="window.location.href='/'">← Back to Home</button>
+    """
 
 # CRITICAL: Proper port binding for Render
 if __name__ == '__main__':
