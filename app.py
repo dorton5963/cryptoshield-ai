@@ -1,5 +1,3 @@
-[file name]: app.py
-[file content begin]
 from flask import Flask, jsonify, request, render_template_string, redirect
 import requests
 import sqlite3
@@ -8,6 +6,11 @@ import os
 import re
 import logging
 from typing import Dict, Any
+
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port, debug=Config.DEBUG)
 
 # Enhanced logging configuration
 logging.basicConfig(
@@ -165,6 +168,14 @@ def init_db():
             conn.close()
 
 init_db()
+
+# Simple referral tracking in your database
+def add_referral(referrer_id, new_user_id):
+    # Track who referred whom
+    pass
+# Add a simple email signup to capture leads even if they don't buy premium.
+# Add testimonials or "X users protected" counters.
+
 
 def log_activity_to_db(event_type: str, details: str = ""):
     """Log activity to database for better analytics"""
@@ -344,7 +355,10 @@ def premium():
                 <li>✅ Multi-wallet protection</li>
             </ul>
         </div>
-        
+
+
+# Add this to your /premium template
+<div style="background: #fffbeb; border: 1px solid #f59e0b; padding: 15px; border-radius: 5px; margin: 15px 0;"> <strong>🚀 Limited Time:</strong> First 100 users get lifetime price lock at $4.99/month! </div>
         <div class="payment-option">
             <h3>💰 Coinbase Payments (Recommended)</h3>
             <p>Instant setup with your existing Coinbase account</p>
@@ -580,4 +594,3 @@ def internal_error(error):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=Config.DEBUG)
-[file content end]
