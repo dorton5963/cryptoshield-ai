@@ -4,6 +4,12 @@ import sqlite3
 import datetime
 import os
 
+
+# ADD THE LOGGING FUNCTION RIGHT HERE:
+def log_activity(event_type, details=""):
+    timestamp = datetime.datetime.now().isoformat()
+    print(f"📊 {timestamp} - {event_type}: {details}")
+
 app = Flask(__name__)
 
 # Initialize database
@@ -113,11 +119,13 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def home():
+    log_activity("PAGE_VIEW", "homepage")
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/api/check')
 def check_url():
-    url = request.args.get('url', '').lower()
+    url = request.args.get('url', '')
+    log_activity("URL_CHECK", url)
     
     if not url:
         return jsonify({'error': 'No URL provided'}), 400
@@ -138,6 +146,7 @@ def check_url():
 
 @app.route('/premium')
 def premium():
+    log_activity("PAGE_VIEW", "premium_page")
     return render_template_string('''
     <!DOCTYPE html>
     <html>
@@ -180,6 +189,7 @@ def premium():
 
 @app.route('/coinbase-payment')
 def coinbase_payment():
+    log_activity("PAYMENT_ATTEMPT", "coinbase")
     if COINBASE_API_KEY == "7bce8152-0224-4970-a5de-267bd06a2e34":
         return redirect('/premium')  # Fallback if API key not set
     
@@ -286,28 +296,37 @@ def coinbase_webhook():
     event_type = data.get('event', {}).get('type')
     
     if event_type == 'charge:confirmed':
-        # PAYMENT SUCCESS - Activate premium
-        charge_data = data.get('event', {}).get('data', {})
-        customer_email = charge_data.get('metadata', {}).get('customer_email')
-        amount = charge_data.get('pricing', {}).get('local', {}).get('amount')
-        
-        print(f"💰 PAYMENT CONFIRMED: ${amount} from {customer_email}")
-        
+        log_activity("PAYMENT_CONFIRMED", str(data))
     elif event_type == 'charge:failed':
-        print(f"❌ PAYMENT FAILED: {data}")
-    elif event_type == 'charge:created':
-        print(f"🟡 PAYMENT INITIATED: {data}")
+        log_activity("PAYMENT_FAILED", str(data))
     
     return jsonify({'status': 'success'})
+
 # Update your success page
 @app.route('/payment-success')
 def payment_success():
+    log_activity("PAYMENT_SUCCESS", "manual_redirect")
     return """
     <h2>✅ Payment Successful!</h2>
     <p>Thank you for subscribing to CryptoShield AI Premium!</p>
     <p>Your account will be activated within 1 hour.</p>
     <p>For any questions, contact: dan@cryptoshield-ai.com</p>
     <button onclick="window.location.href='/'">← Back to Home</button>
+    """
+
+@app.route('/activate-premium')
+def activate_premium():
+    return """
+    <h2>🎉 Welcome to Premium!</h2>
+    <p>Your CryptoShield AI Premium account is now active.</p>
+    <p><strong>Premium Features Unlocked:</strong></p>
+    <ul>
+    <li>Advanced AI scam detection</li>
+    <li>Real-time portfolio monitoring</li>
+    <li>Priority customer support</li>
+    <li>Browser extension access (coming soon)</li>
+    </ul>
+    <button onclick="window.location.href='/'">← Start Using Premium</button>
     """
 
 # CRITICAL: Proper port binding for Render
