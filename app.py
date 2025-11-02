@@ -267,6 +267,37 @@ def signup():
         'message': 'Welcome to CryptoShield AI!',
         'next_step': 'check_premium_options'
     })
+@app.route('/coinbase-webhook', methods=['POST'])
+def coinbase_webhook():
+    data = request.json
+    event_type = data.get('event', {}).get('type')
+    
+    if event_type == 'charge:confirmed':
+        # PAYMENT SUCCESS - Activate premium
+        charge_data = data.get('event', {}).get('data', {})
+        customer_email = charge_data.get('metadata', {}).get('customer_email')
+        amount = charge_data.get('pricing', {}).get('local', {}).get('amount')
+        
+        print(f"💰 PAYMENT CONFIRMED: ${amount} from {customer_email}")
+        
+        # TODO: Activate premium for this customer
+        # Store in database, send welcome email, etc.
+        
+    elif event_type == 'charge:failed':
+        print(f"❌ PAYMENT FAILED: {data}")
+    elif event_type == 'charge:created':
+        print(f"🟡 PAYMENT INITIATED: {data}")
+    
+    return jsonify({'status': 'success'})
+# Update your success page
+@app.route('/payment-success')
+def payment_success():
+    return """
+    <h2>✅ Payment Successful!</h2>
+    <p>Welcome to CryptoShield AI Premium!</p>
+    <p>Your account is being activated...</p>
+    <p>Check your email for confirmation.</p>
+    <button onclick="window.location.href='/'">← Start Using Premium Features</button>
 
 # CRITICAL: Proper port binding for Render
 if __name__ == '__main__':
