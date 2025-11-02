@@ -164,11 +164,11 @@ def premium():
             <h3>⚡ Manual Crypto Payments</h3>
             <p>Send $4.99 USD equivalent in crypto to:</p>
             <div class="crypto-address">
-                <strong>Bitcoin (BTC):</strong> bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh<br>
-                <strong>Ethereum (ETH):</strong> 0x71C7656EC7ab88b098defB751B7401B5f6d8976F<br>
-                <strong>USDC (ERC-20):</strong> 0x71C7656EC7ab88b098defB751B7401B5f6d8976F
+                <strong>Bitcoin (BTC):</strong>  1Nkck7Q1cEZmQBsxzhobipgByS9p7BxGYz<br>
+                <strong>Ethereum (ETH):</strong> 0x7998C2b3e97b1b0b587D7B548b614267c62Da34D<br>
+                <strong>USDC (ERC-20):</strong> 0xC2AcEE65df126470a2E12E50B8F235111bDb9aed
             </div>
-            <p>After payment, email receipt to: <strong>dan@cryptoshield-ai.com</strong></p>
+            <p>After payment, email receipt to: <strong>d.orton5963@gmail.com</strong></p>
         </div>
         
         <div style="margin-top: 30px;">
@@ -180,7 +180,7 @@ def premium():
 
 @app.route('/coinbase-payment')
 def coinbase_payment():
-    if COINBASE_API_KEY == "YOUR_COINBASE_COMMERCE_API_KEY_HERE":
+    if COINBASE_API_KEY == "7bce8152-0224-4970-a5de-267bd06a2e34":
         return redirect('/premium')  # Fallback if API key not set
     
     charge_data = {
