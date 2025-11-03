@@ -197,6 +197,23 @@ def log_activity_to_db(event_type: str, details: str = ""):
         if conn:
             conn.close()
 
+def verify_coinbase_webhook(payload, signature):
+    """Verify Coinbase webhook signature"""
+    import hmac
+    import hashlib
+    
+    if not Config.COINBASE_WEBHOOK_SECRET:
+        return True  # Skip verification if no secret set
+    
+    computed_signature = hmac.new(
+        Config.COINBASE_WEBHOOK_SECRET.encode('utf-8'),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(computed_signature, signature)
+
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -287,6 +304,10 @@ HTML_TEMPLATE = """
 </body>
 </html>
 """
+
+
+
+
 
 @app.route('/')
 def home():
@@ -395,7 +416,7 @@ def coinbase_webhook():
         log_activity("PAYMENT_CONFIRMED", "Webhook confirmation")
         # Process successful payment
         charge_data = data.get('event', {}).get('data', {})
-        process_payment_confirmation(charge_data)
+        # Add your payment processing logic here
     
     return jsonify({'status': 'success'})
 
