@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template_string, redirect
+from flask import Flask, jsonify, request, render_template_string, redirect, url_for
 import requests
 import sqlite3
 import datetime
@@ -6,6 +6,7 @@ import os
 import re
 import logging
 from typing import Dict, Any
+import paypalrestsdk
 
 # Enhanced logging configuration
 logging.basicConfig(
@@ -22,7 +23,7 @@ def log_activity(event_type: str, details: str = ""):
     timestamp = datetime.datetime.now().isoformat()
     # Sanitize sensitive data from logs
     safe_details = details
-    if 'api_key' in details.lower() or 'key' in details.lower():
+    if 'api_key' in details.lower() or 'key' in details.lower() or 'secret' in details.lower():
         safe_details = "[REDACTED_SENSITIVE_DATA]"
     
     log_message = f"📊 {timestamp} - {event_type}: {safe_details}"
@@ -35,9 +36,20 @@ class Config:
     COINBASE_API_KEY = os.environ.get('COINBASE_API_KEY', '')
     DATABASE_URL = os.environ.get('DATABASE_URL', 'cryptoshield.db')
     DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
+    # PayPal Configuration
+    PAYPAL_CLIENT_ID = os.environ.get('PAYPAL_CLIENT_ID', '')
+    PAYPAL_CLIENT_SECRET = os.environ.get('PAYPAL_CLIENT_SECRET', '')
+    PAYPAL_MODE = os.environ.get('PAYPAL_MODE', 'sandbox')  # or 'live'
 
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# Configure PayPal
+paypalrestsdk.configure({
+    "mode": Config.PAYPAL_MODE,
+    "client_id": Config.PAYPAL_CLIENT_ID,
+    "client_secret": Config.PAYPAL_CLIENT_SECRET
+})
 
 def is_valid_url(url: str) -> bool:
     """Validate URL format"""
@@ -140,6 +152,8 @@ def init_db():
                       status TEXT, 
                       crypto_amount REAL, 
                       crypto_currency TEXT, 
+                      payment_method TEXT,
+                      paypal_payment_id TEXT,
                       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                       FOREIGN KEY(user_id) REFERENCES users(id))''')
         
@@ -321,44 +335,36 @@ def premium():
         <style>
             body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
             .payment-option { background: #f8f9fa; padding: 20px; margin: 15px 0; border-radius: 8px; border-left: 4px solid #0052FF; }
-            button { background: #0052FF; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; margin: 10px 5px; }
+            .paypal-option { background: #fffbf0; border-left: 4px solid #0070ba; }
+            .manual-option { background: #e8f5e9; border-left: 4px solid #4CAF50; }
+            button { color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; margin: 10px 5px; font-size: 16px; }
+            .paypal-btn { background: #0070ba; }
+            .manual-btn { background: #4CAF50; }
+            .crypto-btn { background: #ff9800; }
             .crypto-address { background: #e9ecef; padding: 10px; border-radius: 4px; font-family: monospace; word-break: break-all; }
-            .feature-list { margin: 20px 0; }
-            .feature-list li { margin: 10px 0; }
+            .success-badge { background: #4CAF50; color: white; padding: 5px 10px; border-radius: 12px; font-size: 12px; }
         </style>
     </head>
     <body>
         <h1>🚀 CryptoShield AI Premium</h1>
         <p><strong>$4.99/month</strong> - Complete crypto protection</p>
         
-        <div class="feature-list">
-            <h3>✨ Premium Features:</h3>
-            <ul>
-                <li>✅ Advanced AI scam detection</li>
-                <li>✅ Real-time portfolio monitoring</li>
-                <li>✅ Contract address analysis</li>
-                <li>✅ Browser extension access</li>
-                <li>✅ Priority customer support</li>
-                <li>✅ Multi-wallet protection</li>
-            </ul>
+        <div class="payment-option paypal-option">
+            <h3>💰 PayPal Payments <span class="success-badge">RECOMMENDED</span></h3>
+            <p>Pay securely with your PayPal account or credit card</p>
+            <button class="paypal-btn" onclick="window.location.href='/paypal-payment'">Pay with PayPal</button>
+            <p><small>✅ Instant activation • ✅ Credit cards accepted • ✅ Secure payment</small></p>
         </div>
-        
-        <div class="payment-option">
-            <h3>💰 Coinbase Payments (Recommended)</h3>
-            <p>Instant setup with your existing Coinbase account</p>
-            <button onclick="window.location.href='/coinbase-payment'">Pay with Coinbase</button>
-        </div>
-        
-        <div class="payment-option">
+
+        <div class="payment-option manual-option">
             <h3>⚡ Manual Crypto Payments</h3>
             <p>Send $4.99 USD equivalent in crypto to:</p>
             <div class="crypto-address">
-                <strong>Bitcoin (BTC):</strong>  1Nkck7Q1cEZmQBsxzhobipgByS9p7BxGYz<br>
+                <strong>Bitcoin (BTC):</strong> 1Nkck7Q1cEZmQBsxzhobipgByS9p7BxGYz<br>
                 <strong>Ethereum (ETH):</strong> 0x7998C2b3e97b1b0b587D7B548b614267c62Da34D<br>
                 <strong>USDC (ERC-20):</strong> 0xC2AcEE65df126470a2E12E50B8F235111bDb9aed
             </div>
-            <p>After payment, email receipt to: <strong>d.orton5963@gmail.com</strong></p>
-            <p><small>Include your email address in the payment memo for faster activation</small></p>
+            <button class="manual-btn" onclick="window.location.href='/manual-payment-info'">Manual Payment Instructions</button>
         </div>
         
         <div style="margin-top: 30px;">
@@ -368,186 +374,140 @@ def premium():
     </html>
     ''')
 
-@app.route('/coinbase-payment')
-def coinbase_payment():
-    log_activity("PAYMENT_ATTEMPT", "coinbase")
-    log_activity_to_db("PAYMENT_ATTEMPT", "coinbase")
+@app.route('/paypal-payment')
+def paypal_payment():
+    log_activity("PAYMENT_ATTEMPT", "paypal")
     
-    # Check if API key is properly configured
-    if not Config.COINBASE_API_KEY:
-        log_activity("PAYMENT_ERROR", "Coinbase API key not configured")
+    if not Config.PAYPAL_CLIENT_ID or not Config.PAYPAL_CLIENT_SECRET:
         return render_template_string('''
-            <h3>⚠️ Payment System Configuration</h3>
-            <p>Coinbase payments are currently being configured.</p>
-            <p>Please use the manual crypto payment option for now.</p>
+            <h3>⚠️ PayPal Not Configured</h3>
+            <p>PayPal payments are not yet configured.</p>
+            <p>Please use manual crypto payments for now.</p>
             <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
         ''')
     
-    # UPDATED: Use the new Checkout API instead of deprecated Charges API
-    checkout_data = {
-        "name": "CryptoShield AI Premium",
-        "description": "Monthly subscription - AI-powered crypto scam protection",
-        "pricing_type": "fixed_price",
-        "local_price": {
-            "amount": "4.99",
-            "currency": "USD"
-        },
-        "requested_info": ["email"],
-        "metadata": {
-            "customer_id": "premium_user",
-            "service": "cryptoshield_ai"
-        },
-        "redirect_url": "https://cryptoshield-ai.onrender.com/payment-success",
-        "cancel_url": "https://cryptoshield-ai.onrender.com/payment-cancel"
-    }
-    
-    headers = {
-        "X-CC-Api-Key": Config.COINBASE_API_KEY,
-        "X-CC-Version": "2018-03-22",
-        "Content-Type": "application/json"
-    }
-    
     try:
-        # UPDATED: Use checkouts endpoint instead of charges
-        response = requests.post(
-            "https://api.commerce.coinbase.com/checkouts",
-            json=checkout_data,
-            headers=headers,
-            timeout=30
-        )
+        # Create PayPal payment
+        payment = paypalrestsdk.Payment({
+            "intent": "sale",
+            "payer": {
+                "payment_method": "paypal"
+            },
+            "redirect_urls": {
+                "return_url": url_for('paypal_success', _external=True),
+                "cancel_url": url_for('paypal_cancel', _external=True)
+            },
+            "transactions": [{
+                "item_list": {
+                    "items": [{
+                        "name": "CryptoShield AI Premium",
+                        "sku": "premium-monthly",
+                        "price": "4.99",
+                        "currency": "USD",
+                        "quantity": 1
+                    }]
+                },
+                "amount": {
+                    "total": "4.99",
+                    "currency": "USD"
+                },
+                "description": "Monthly subscription - AI-powered crypto scam protection"
+            }]
+        })
         
-        if response.status_code == 201:
-            checkout_info = response.json()
-            log_activity("PAYMENT_REDIRECT", "Redirecting to Coinbase checkout")
-            # UPDATED: Use embed_url instead of hosted_url
-            return redirect(checkout_info['data']['embed_url'])
+        if payment.create():
+            log_activity("PAYMENT_CREATED", f"PayPal payment created: {payment.id}")
+            # Redirect user to PayPal approval URL
+            for link in payment.links:
+                if link.rel == "approval_url":
+                    return redirect(link.href)
         else:
-            log_activity("PAYMENT_ERROR", f"Coinbase API error: {response.status_code} - {response.text}")
+            log_activity("PAYMENT_ERROR", f"PayPal payment creation failed: {payment.error}")
             return render_template_string('''
-                <h3>⚠️ Payment System Update Required</h3>
-                <p>We're updating our payment system to use Coinbase's new API.</p>
-                <p>Please use manual crypto payment option for now.</p>
-                <p>Error: {{ error_code }} - {{ error_text }}</p>
+                <h3>⚠️ Payment Error</h3>
+                <p>Failed to create PayPal payment: {{ error }}</p>
                 <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
-            ''', error_code=response.status_code, error_text=response.text)
+            ''', error=payment.error)
             
     except Exception as e:
-        log_activity("PAYMENT_EXCEPTION", f"Coinbase payment error: {str(e)}")
+        log_activity("PAYMENT_EXCEPTION", f"PayPal payment error: {str(e)}")
         return render_template_string('''
             <h3>⚠️ Payment System Error</h3>
             <p>Error: {{ error }}</p>
             <p>Please use manual crypto payment option.</p>
             <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
         ''', error=str(e))
-@app.route('/payment-cancel')
-def payment_cancel():
-    log_activity("PAYMENT_CANCELLED", "User cancelled payment")
-    log_activity_to_db("PAYMENT_CANCELLED", "User cancelled payment")
+
+@app.route('/paypal-success')
+def paypal_success():
+    payment_id = request.args.get('paymentId')
+    payer_id = request.args.get('PayerID')
+    
+    if not payment_id or not payer_id:
+        return redirect('/paypal-cancel')
+    
+    try:
+        payment = paypalrestsdk.Payment.find(payment_id)
+        
+        if payment.execute({"payer_id": payer_id}):
+            log_activity("PAYMENT_SUCCESS", f"PayPal payment executed: {payment_id}")
+            
+            # Record payment in database
+            conn = sqlite3.connect(Config.DATABASE_URL, check_same_thread=False)
+            c = conn.cursor()
+            c.execute('''INSERT INTO payments 
+                        (amount, status, payment_method, paypal_payment_id, created_at) 
+                        VALUES (?, ?, ?, ?, ?)''',
+                     (4.99, 'completed', 'paypal', payment_id, datetime.datetime.now()))
+            conn.commit()
+            conn.close()
+            
+            return redirect('/activate-premium')
+        else:
+            log_activity("PAYMENT_FAILED", f"PayPal payment execution failed: {payment.error}")
+            return redirect('/paypal-cancel')
+            
+    except Exception as e:
+        log_activity("PAYMENT_EXCEPTION", f"PayPal execution error: {str(e)}")
+        return redirect('/paypal-cancel')
+
+@app.route('/paypal-cancel')
+def paypal_cancel():
+    log_activity("PAYMENT_CANCELLED", "User cancelled PayPal payment")
     return render_template_string('''
         <h2>❌ Payment Cancelled</h2>
-        <p>Your payment was cancelled. You can try again anytime.</p>
+        <p>Your PayPal payment was cancelled. You can try again anytime.</p>
         <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
     ''')
 
-@app.route('/payment-success')
-def payment_success():
-    log_activity("PAYMENT_SUCCESS", "Manual redirect success")
-    log_activity_to_db("PAYMENT_SUCCESS", "Manual redirect success")
+@app.route('/manual-payment-info')
+def manual_payment_info():
     return render_template_string('''
-        <h2>✅ Payment Successful!</h2>
-        <p>Thank you for subscribing to CryptoShield AI Premium!</p>
-        <p>Your account will be activated within 1 hour.</p>
-        <p>For any questions, contact: <strong>dan@cryptoshield-ai.com</strong></p>
-        <div style="margin-top: 20px;">
-            <button onclick="window.location.href='/activate-premium'">Activate Premium Features</button>
+        <h2>⚡ Manual Payment Instructions</h2>
+        <p>Send <strong>$4.99 USD equivalent</strong> in crypto to one of these addresses:</p>
+        
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <strong>Bitcoin (BTC):</strong><br>
+            <code style="font-size: 14px;">1Nkck7Q1cEZmQBsxzhobipgByS9p7BxGYz</code><br><br>
+            
+            <strong>Ethereum (ETH):</strong><br>
+            <code style="font-size: 14px;">0x7998C2b3e97b1b0b587D7B548b614267c62Da34D</code><br><br>
+            
+            <strong>USDC (ERC-20):</strong><br>
+            <code style="font-size: 14px;">0xC2AcEE65df126470a2E12E50B8F235111bDb9aed</code>
         </div>
-        <div style="margin-top: 10px;">
-            <button onclick="window.location.href='/'">← Back to Home</button>
-        </div>
+        
+        <p><strong>After payment:</strong></p>
+        <ol>
+            <li>Email the transaction ID to <strong>d.orton5963@gmail.com</strong></li>
+            <li>Include your email address in the email</li>
+            <li>We'll activate your premium within 1 hour</li>
+        </ol>
+        
+        <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
     ''')
 
-@app.route('/api/signup', methods=['POST'])
-def signup():
-    email = request.json.get('email')
-    
-    if not email:
-        return jsonify({'error': 'Email required'}), 400
-    
-    # Basic email validation
-    if not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
-        return jsonify({'error': 'Invalid email format'}), 400
-    
-    conn = None
-    try:
-        conn = sqlite3.connect(Config.DATABASE_URL, check_same_thread=False)
-        c = conn.cursor()
-        c.execute("INSERT OR IGNORE INTO users (email, plan, created_at) VALUES (?, ?, ?)",
-                  (email, 'trial', datetime.datetime.now()))
-        conn.commit()
-        
-        log_activity("USER_SIGNUP", f"New user: {email}")
-        log_activity_to_db("USER_SIGNUP", f"Email: {email}")
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Welcome to CryptoShield AI!',
-            'next_step': 'check_premium_options'
-        })
-        
-    except sqlite3.Error as e:
-        log_activity("SIGNUP_ERROR", f"Database error: {str(e)}")
-        return jsonify({'error': 'Registration failed'}), 500
-    finally:
-        if conn:
-            conn.close()
-
-@app.route('/coinbase-webhook', methods=['POST'])
-def coinbase_webhook():
-    data = request.json
-    event_type = data.get('event', {}).get('type')
-    charge = data.get('event', {}).get('data', {})
-    
-    log_activity("WEBHOOK_RECEIVED", f"Event: {event_type}")
-    log_activity_to_db("WEBHOOK_RECEIVED", f"Event: {event_type}")
-    
-    if event_type == 'charge:confirmed':
-        log_activity("PAYMENT_CONFIRMED", "Webhook confirmation")
-        
-        # Get customer email from the charge
-        emails = charge.get('emails', [])
-        if emails:
-            customer_email = emails[0]
-            # Update or create user in database with premium plan
-            conn = None
-            try:
-                conn = sqlite3.connect(Config.DATABASE_URL, check_same_thread=False)
-                c = conn.cursor()
-                
-                # Check if user exists
-                c.execute("SELECT id FROM users WHERE email = ?", (customer_email,))
-                user = c.fetchone()
-                
-                if user:
-                    # Update existing user to premium
-                    c.execute("UPDATE users SET plan = 'premium' WHERE email = ?", (customer_email,))
-                else:
-                    # Create new user with premium plan
-                    c.execute("INSERT INTO users (email, plan, created_at) VALUES (?, ?, ?)",
-                              (customer_email, 'premium', datetime.datetime.now()))
-                
-                conn.commit()
-                log_activity("PREMIUM_ACTIVATED", f"User {customer_email} upgraded to premium via webhook")
-                
-            except sqlite3.Error as e:
-                log_activity("WEBHOOK_DB_ERROR", f"Database error: {str(e)}")
-            finally:
-                if conn:
-                    conn.close()
-        
-    elif event_type == 'charge:failed':
-        log_activity("PAYMENT_FAILED", "Webhook failure")
-    
-    return jsonify({'status': 'success'})
+# ... (keep all your existing routes for coinbase, database, etc.)
 
 @app.route('/activate-premium')
 def activate_premium():
@@ -569,45 +529,7 @@ def activate_premium():
         </div>
     ''')
 
-@app.route('/api/metrics')
-def get_metrics():
-    """API endpoint to get business metrics"""
-    conn = None
-    try:
-        conn = sqlite3.connect(Config.DATABASE_URL, check_same_thread=False)
-        c = conn.cursor()
-        
-        # Get user count
-        c.execute("SELECT COUNT(*) FROM users")
-        user_count = c.fetchone()[0]
-        
-        # Get scam check count
-        c.execute("SELECT COUNT(*) FROM activity_log WHERE event_type = 'URL_CHECK'")
-        total_checks = c.fetchone()[0]
-        
-        return jsonify({
-            'users': user_count,
-            'total_checks': total_checks,
-            'system_status': 'operational',
-            'timestamp': datetime.datetime.now().isoformat()
-        })
-        
-    except sqlite3.Error as e:
-        log_activity("METRICS_ERROR", f"Failed to get metrics: {str(e)}")
-        return jsonify({'error': 'Failed to retrieve metrics'}), 500
-    finally:
-        if conn:
-            conn.close()
-
-# Error handlers
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({'error': 'Endpoint not found'}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    log_activity("SERVER_ERROR", f"500 error: {str(error)}")
-    return jsonify({'error': 'Internal server error'}), 500
+# ... (keep all your existing routes)
 
 # CRITICAL: Proper port binding for Render
 if __name__ == '__main__':
