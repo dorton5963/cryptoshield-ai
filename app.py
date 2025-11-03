@@ -505,14 +505,45 @@ def signup():
 def coinbase_webhook():
     data = request.json
     event_type = data.get('event', {}).get('type')
+    charge = data.get('event', {}).get('data', {})
     
     log_activity("WEBHOOK_RECEIVED", f"Event: {event_type}")
     log_activity_to_db("WEBHOOK_RECEIVED", f"Event: {event_type}")
     
     if event_type == 'charge:confirmed':
         log_activity("PAYMENT_CONFIRMED", "Webhook confirmation")
-        # Process successful payment
-        # Add user to premium, send confirmation email, etc.
+        
+        # Get customer email from the charge
+        emails = charge.get('emails', [])
+        if emails:
+            customer_email = emails[0]
+            # Update or create user in database with premium plan
+            conn = None
+            try:
+                conn = sqlite3.connect(Config.DATABASE_URL, check_same_thread=False)
+                c = conn.cursor()
+                
+                # Check if user exists
+                c.execute("SELECT id FROM users WHERE email = ?", (customer_email,))
+                user = c.fetchone()
+                
+                if user:
+                    # Update existing user to premium
+                    c.execute("UPDATE users SET plan = 'premium' WHERE email = ?", (customer_email,))
+                else:
+                    # Create new user with premium plan
+                    c.execute("INSERT INTO users (email, plan, created_at) VALUES (?, ?, ?)",
+                              (customer_email, 'premium', datetime.datetime.now()))
+                
+                conn.commit()
+                log_activity("PREMIUM_ACTIVATED", f"User {customer_email} upgraded to premium via webhook")
+                
+            except sqlite3.Error as e:
+                log_activity("WEBHOOK_DB_ERROR", f"Database error: {str(e)}")
+            finally:
+                if conn:
+                    conn.close()
+        
     elif event_type == 'charge:failed':
         log_activity("PAYMENT_FAILED", "Webhook failure")
     
