@@ -6,7 +6,6 @@ import os
 import re
 import logging
 from typing import Dict, Any
-import paypalrestsdk
 
 # Enhanced logging configuration
 logging.basicConfig(
@@ -34,6 +33,7 @@ class Config:
     """Configuration management with environment variables"""
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
     COINBASE_API_KEY = os.environ.get('COINBASE_API_KEY', '')
+    COINBASE_WEBHOOK_SECRET = os.environ.get('COINBASE_WEBHOOK_SECRET', '')
     DATABASE_URL = os.environ.get('DATABASE_URL', 'cryptoshield.db')
     DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
     # PayPal Configuration
@@ -43,13 +43,6 @@ class Config:
 
 app = Flask(__name__)
 app.config.from_object(Config)
-
-# Configure PayPal
-paypalrestsdk.configure({
-    "mode": Config.PAYPAL_MODE,
-    "client_id": Config.PAYPAL_CLIENT_ID,
-    "client_secret": Config.PAYPAL_CLIENT_SECRET
-})
 
 def is_valid_url(url: str) -> bool:
     """Validate URL format"""
@@ -213,7 +206,6 @@ def verify_coinbase_webhook(payload, signature):
     
     return hmac.compare_digest(computed_signature, signature)
 
-
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -305,10 +297,6 @@ HTML_TEMPLATE = """
 </html>
 """
 
-
-
-
-
 @app.route('/')
 def home():
     log_activity("PAGE_VIEW", "homepage")
@@ -344,48 +332,87 @@ def check_url():
         'timestamp': datetime.datetime.now().isoformat()
     })
 
+@app.route('/premium')
+def premium():
+    log_activity("PAGE_VIEW", "premium_page")
+    log_activity_to_db("PAGE_VIEW", "premium_page")
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Premium - CryptoShield AI</title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+            .payment-option { background: #f8f9fa; padding: 20px; margin: 15px 0; border-radius: 8px; border-left: 4px solid #0052FF; }
+            .paypal-option { background: #fffbf0; border-left: 4px solid #0070ba; }
+            .coinbase-option { background: #f0f8ff; border-left: 4px solid #0052FF; }
+            .manual-option { background: #e8f5e9; border-left: 4px solid #4CAF50; }
+            button { color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; margin: 10px 5px; font-size: 16px; }
+            .paypal-btn { background: #0070ba; }
+            .coinbase-btn { background: #0052FF; }
+            .manual-btn { background: #4CAF50; }
+            .crypto-address { background: #e9ecef; padding: 10px; border-radius: 4px; font-family: monospace; word-break: break-all; }
+            .success-badge { background: #4CAF50; color: white; padding: 5px 10px; border-radius: 12px; font-size: 12px; }
+            .beta-badge { background: #ff9800; color: white; padding: 5px 10px; border-radius: 12px; font-size: 12px; }
+        </style>
+    </head>
+    <body>
+        <h1>🚀 CryptoShield AI Premium</h1>
+        <p><strong>$4.99/month</strong> - Complete crypto protection</p>
+        
+        <div class="payment-option paypal-option">
+            <h3>💰 PayPal Payments <span class="success-badge">RECOMMENDED</span></h3>
+            <p>Pay securely with your PayPal account or credit card</p>
+            <button class="paypal-btn" onclick="window.location.href='/paypal-payment'">Pay with PayPal</button>
+            <p><small>✅ Instant activation • ✅ Credit cards accepted • ✅ Secure payment</small></p>
+        </div>
 
-@app.route('/coinbase-webhook', methods=['POST'])
-def coinbase_webhook():
-    # Verify webhook signature
-    signature = request.headers.get('X-CC-Webhook-Signature')
-    payload = request.get_data()
-    
-    # Verify the webhook came from Coinbase
-    if not verify_coinbase_webhook(payload, signature):
-        log_activity("WEBHOOK_SECURITY", "Invalid webhook signature")
-        return jsonify({'error': 'Invalid signature'}), 401
-    
-    data = request.json
-    event_type = data.get('event', {}).get('type')
-    
-    log_activity("WEBHOOK_RECEIVED", f"Event: {event_type}")
-    log_activity_to_db("WEBHOOK_RECEIVED", f"Event: {event_type}")
-    
-    if event_type == 'charge:confirmed':
-        log_activity("PAYMENT_CONFIRMED", "Webhook confirmation")
-        # Process successful payment
-        charge_data = data.get('event', {}).get('data', {})
-        # Add your payment processing logic here
-    
-    return jsonify({'status': 'success'})
+        <div class="payment-option coinbase-option">
+            <h3>⚡ Coinbase Payments <span class="beta-badge">CRYPTO NATIVE</span></h3>
+            <p>Pay with 100+ cryptocurrencies via Coinbase</p>
+            <button class="coinbase-btn" onclick="window.location.href='/coinbase-payment'">Pay with Coinbase</button>
+            <p><small>✅ 100+ cryptocurrencies • ✅ Instant activation • ✅ Crypto-native</small></p>
+        </div>
 
-def verify_coinbase_webhook(payload, signature):
-    """Verify Coinbase webhook signature"""
-    import hmac
-    import hashlib
-    
-    if not Config.COINBASE_WEBHOOK_SECRET:
-        return True  # Skip verification if no secret set
-    
-    computed_signature = hmac.new(
-        Config.COINBASE_WEBHOOK_SECRET.encode('utf-8'),
-        payload,
-        hashlib.sha256
-    ).hexdigest()
-    
-    return hmac.compare_digest(computed_signature, signature)
+        <div class="payment-option manual-option">
+            <h3>🔗 Manual Crypto Payments</h3>
+            <p>Send $4.99 USD equivalent in crypto directly to our wallets</p>
+            <div class="crypto-address">
+                <strong>Bitcoin (BTC):</strong> 1Nkck7Q1cEZmQBsxzhobipgByS9p7BxGYz<br>
+                <strong>Ethereum (ETH):</strong> 0x7998C2b3e97b1b0b587D7B548b614267c62Da34D<br>
+                <strong>USDC (ERC-20):</strong> 0xC2AcEE65df126470a2E12E50B8F235111bDb9aed
+            </div>
+            <button class="manual-btn" onclick="window.location.href='/manual-payment-info'">Manual Payment Instructions</button>
+            <p><small>✅ Direct wallet-to-wallet • ✅ No middlemen • ✅ Email activation</small></p>
+        </div>
+        
+        <div style="margin-top: 30px;">
+            <button onclick="window.location.href='/'">← Back to Home</button>
+        </div>
+    </body>
+    </html>
+    ''')
 
+@app.route('/paypal-payment')
+def paypal_payment():
+    log_activity("PAYMENT_ATTEMPT", "paypal")
+    
+    if not Config.PAYPAL_CLIENT_ID or not Config.PAYPAL_CLIENT_SECRET:
+        return render_template_string('''
+            <h3>⚠️ PayPal Not Configured</h3>
+            <p>PayPal payments are not yet configured.</p>
+            <p>Please use Coinbase or manual crypto payments for now.</p>
+            <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
+        ''')
+    
+    # For now, show a temporary message since we don't have PayPal fully integrated
+    return render_template_string('''
+        <h2>🔄 PayPal Integration</h2>
+        <p>We're setting up PayPal payments for instant activation.</p>
+        <p>In the meantime, please use Coinbase or manual crypto payments.</p>
+        <p>PayPal will be available within 24 hours.</p>
+        <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
+    ''')
 
 @app.route('/coinbase-payment')
 def coinbase_payment():
@@ -398,116 +425,66 @@ def coinbase_payment():
         return render_template_string('''
             <h3>⚠️ Payment System Configuration</h3>
             <p>Coinbase payments are currently being configured.</p>
-            <p>Please use PayPal or manual crypto payment options for now.</p>
+            <p>Please use manual crypto payment option for now.</p>
             <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
         ''')
-
-
-@app.route('/paypal-payment')
-def paypal_payment():
-    log_activity("PAYMENT_ATTEMPT", "paypal")
     
-    if not Config.PAYPAL_CLIENT_ID or not Config.PAYPAL_CLIENT_SECRET:
-        return render_template_string('''
-            <h3>⚠️ PayPal Not Configured</h3>
-            <p>PayPal payments are not yet configured.</p>
-            <p>Please use manual crypto payments for now.</p>
-            <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
-        ''')
+    # UPDATED: Use the new Checkout API instead of deprecated Charges API
+    checkout_data = {
+        "name": "CryptoShield AI Premium",
+        "description": "Monthly subscription - AI-powered crypto scam protection",
+        "pricing_type": "fixed_price",
+        "local_price": {
+            "amount": "4.99",
+            "currency": "USD"
+        },
+        "requested_info": ["email"],
+        "metadata": {
+            "customer_id": "premium_user",
+            "service": "cryptoshield_ai"
+        },
+        "redirect_url": "https://cryptoshield-ai.onrender.com/payment-success",
+        "cancel_url": "https://cryptoshield-ai.onrender.com/payment-cancel"
+    }
+    
+    headers = {
+        "X-CC-Api-Key": Config.COINBASE_API_KEY,
+        "X-CC-Version": "2018-03-22",
+        "Content-Type": "application/json"
+    }
     
     try:
-        # Create PayPal payment
-        payment = paypalrestsdk.Payment({
-            "intent": "sale",
-            "payer": {
-                "payment_method": "paypal"
-            },
-            "redirect_urls": {
-                "return_url": url_for('paypal_success', _external=True),
-                "cancel_url": url_for('paypal_cancel', _external=True)
-            },
-            "transactions": [{
-                "item_list": {
-                    "items": [{
-                        "name": "CryptoShield AI Premium",
-                        "sku": "premium-monthly",
-                        "price": "4.99",
-                        "currency": "USD",
-                        "quantity": 1
-                    }]
-                },
-                "amount": {
-                    "total": "4.99",
-                    "currency": "USD"
-                },
-                "description": "Monthly subscription - AI-powered crypto scam protection"
-            }]
-        })
+        # UPDATED: Use checkouts endpoint instead of charges
+        response = requests.post(
+            "https://api.commerce.coinbase.com/checkouts",
+            json=checkout_data,
+            headers=headers,
+            timeout=30
+        )
         
-        if payment.create():
-            log_activity("PAYMENT_CREATED", f"PayPal payment created: {payment.id}")
-            # Redirect user to PayPal approval URL
-            for link in payment.links:
-                if link.rel == "approval_url":
-                    return redirect(link.href)
+        if response.status_code == 201:
+            checkout_info = response.json()
+            log_activity("PAYMENT_REDIRECT", "Redirecting to Coinbase checkout")
+            # UPDATED: Use embed_url instead of hosted_url
+            return redirect(checkout_info['data']['embed_url'])
         else:
-            log_activity("PAYMENT_ERROR", f"PayPal payment creation failed: {payment.error}")
+            log_activity("PAYMENT_ERROR", f"Coinbase API error: {response.status_code} - {response.text}")
             return render_template_string('''
-                <h3>⚠️ Payment Error</h3>
-                <p>Failed to create PayPal payment: {{ error }}</p>
+                <h3>⚠️ Payment System Update Required</h3>
+                <p>We're updating our payment system to use Coinbase's new API.</p>
+                <p>Please use manual crypto payment option for now.</p>
+                <p>Error: {{ error_code }} - {{ error_text }}</p>
                 <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
-            ''', error=payment.error)
+            ''', error_code=response.status_code, error_text=response.text)
             
     except Exception as e:
-        log_activity("PAYMENT_EXCEPTION", f"PayPal payment error: {str(e)}")
+        log_activity("PAYMENT_EXCEPTION", f"Coinbase payment error: {str(e)}")
         return render_template_string('''
             <h3>⚠️ Payment System Error</h3>
             <p>Error: {{ error }}</p>
             <p>Please use manual crypto payment option.</p>
             <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
         ''', error=str(e))
-
-@app.route('/paypal-success')
-def paypal_success():
-    payment_id = request.args.get('paymentId')
-    payer_id = request.args.get('PayerID')
-    
-    if not payment_id or not payer_id:
-        return redirect('/paypal-cancel')
-    
-    try:
-        payment = paypalrestsdk.Payment.find(payment_id)
-        
-        if payment.execute({"payer_id": payer_id}):
-            log_activity("PAYMENT_SUCCESS", f"PayPal payment executed: {payment_id}")
-            
-            # Record payment in database
-            conn = sqlite3.connect(Config.DATABASE_URL, check_same_thread=False)
-            c = conn.cursor()
-            c.execute('''INSERT INTO payments 
-                        (amount, status, payment_method, paypal_payment_id, created_at) 
-                        VALUES (?, ?, ?, ?, ?)''',
-                     (4.99, 'completed', 'paypal', payment_id, datetime.datetime.now()))
-            conn.commit()
-            conn.close()
-            
-            return redirect('/activate-premium')
-        else:
-            log_activity("PAYMENT_FAILED", f"PayPal payment execution failed: {payment.error}")
-            return redirect('/paypal-cancel')
-            
-    except Exception as e:
-        log_activity("PAYMENT_EXCEPTION", f"PayPal execution error: {str(e)}")
-        return redirect('/paypal-cancel')
-
-@app.route('/paypal-cancel')
-def paypal_cancel():
-    log_activity("PAYMENT_CANCELLED", "User cancelled PayPal payment")
-    return render_template_string('''
-        <h2>❌ Payment Cancelled</h2>
-        <p>Your PayPal payment was cancelled. You can try again anytime.</p>
-        <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
-    ''')
 
 @app.route('/manual-payment-info')
 def manual_payment_info():
@@ -536,7 +513,32 @@ def manual_payment_info():
         <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
     ''')
 
-# ... (keep all your existing routes for coinbase, database, etc.)
+@app.route('/payment-cancel')
+def payment_cancel():
+    log_activity("PAYMENT_CANCELLED", "User cancelled payment")
+    log_activity_to_db("PAYMENT_CANCELLED", "User cancelled payment")
+    return render_template_string('''
+        <h2>❌ Payment Cancelled</h2>
+        <p>Your payment was cancelled. You can try again anytime.</p>
+        <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
+    ''')
+
+@app.route('/payment-success')
+def payment_success():
+    log_activity("PAYMENT_SUCCESS", "Manual redirect success")
+    log_activity_to_db("PAYMENT_SUCCESS", "Manual redirect success")
+    return render_template_string('''
+        <h2>✅ Payment Successful!</h2>
+        <p>Thank you for subscribing to CryptoShield AI Premium!</p>
+        <p>Your account will be activated within 1 hour.</p>
+        <p>For any questions, contact: <strong>dan@cryptoshield-ai.com</strong></p>
+        <div style="margin-top: 20px;">
+            <button onclick="window.location.href='/activate-premium'">Activate Premium Features</button>
+        </div>
+        <div style="margin-top: 10px;">
+            <button onclick="window.location.href='/'">← Back to Home</button>
+        </div>
+    ''')
 
 @app.route('/activate-premium')
 def activate_premium():
@@ -558,7 +560,39 @@ def activate_premium():
         </div>
     ''')
 
-# ... (keep all your existing routes)
+@app.route('/coinbase-webhook', methods=['POST'])
+def coinbase_webhook():
+    # Verify webhook signature
+    signature = request.headers.get('X-CC-Webhook-Signature')
+    payload = request.get_data()
+    
+    # Verify the webhook came from Coinbase
+    if not verify_coinbase_webhook(payload, signature):
+        log_activity("WEBHOOK_SECURITY", "Invalid webhook signature")
+        return jsonify({'error': 'Invalid signature'}), 401
+    
+    data = request.json
+    event_type = data.get('event', {}).get('type')
+    
+    log_activity("WEBHOOK_RECEIVED", f"Event: {event_type}")
+    log_activity_to_db("WEBHOOK_RECEIVED", f"Event: {event_type}")
+    
+    if event_type == 'charge:confirmed':
+        log_activity("PAYMENT_CONFIRMED", "Webhook confirmation")
+    elif event_type == 'charge:failed':
+        log_activity("PAYMENT_FAILED", "Webhook failure")
+    
+    return jsonify({'status': 'success'})
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    log_activity("SERVER_ERROR", f"500 error: {str(error)}")
+    return jsonify({'error': 'Internal server error'}), 500
 
 # CRITICAL: Proper port binding for Render
 if __name__ == '__main__':
