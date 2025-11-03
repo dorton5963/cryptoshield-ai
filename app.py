@@ -344,56 +344,6 @@ def check_url():
         'timestamp': datetime.datetime.now().isoformat()
     })
 
-@app.route('/premium')
-def premium():
-    log_activity("PAGE_VIEW", "premium_page")
-    log_activity_to_db("PAGE_VIEW", "premium_page")
-    return render_template_string('''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Premium - CryptoShield AI</title>
-        <style>
-            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-            .payment-option { background: #f8f9fa; padding: 20px; margin: 15px 0; border-radius: 8px; border-left: 4px solid #0052FF; }
-            .paypal-option { background: #fffbf0; border-left: 4px solid #0070ba; }
-            .manual-option { background: #e8f5e9; border-left: 4px solid #4CAF50; }
-            button { color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; margin: 10px 5px; font-size: 16px; }
-            .paypal-btn { background: #0070ba; }
-            .manual-btn { background: #4CAF50; }
-            .crypto-btn { background: #ff9800; }
-            .crypto-address { background: #e9ecef; padding: 10px; border-radius: 4px; font-family: monospace; word-break: break-all; }
-            .success-badge { background: #4CAF50; color: white; padding: 5px 10px; border-radius: 12px; font-size: 12px; }
-        </style>
-    </head>
-    <body>
-        <h1>🚀 CryptoShield AI Premium</h1>
-        <p><strong>$4.99/month</strong> - Complete crypto protection</p>
-        
-        <div class="payment-option paypal-option">
-            <h3>💰 PayPal Payments <span class="success-badge">RECOMMENDED</span></h3>
-            <p>Pay securely with your PayPal account or credit card</p>
-            <button class="paypal-btn" onclick="window.location.href='/paypal-payment'">Pay with PayPal</button>
-            <p><small>✅ Instant activation • ✅ Credit cards accepted • ✅ Secure payment</small></p>
-        </div>
-
-        <div class="payment-option manual-option">
-            <h3>⚡ Manual Crypto Payments</h3>
-            <p>Send $4.99 USD equivalent in crypto to:</p>
-            <div class="crypto-address">
-                <strong>Bitcoin (BTC):</strong> 1Nkck7Q1cEZmQBsxzhobipgByS9p7BxGYz<br>
-                <strong>Ethereum (ETH):</strong> 0x7998C2b3e97b1b0b587D7B548b614267c62Da34D<br>
-                <strong>USDC (ERC-20):</strong> 0xC2AcEE65df126470a2E12E50B8F235111bDb9aed
-            </div>
-            <button class="manual-btn" onclick="window.location.href='/manual-payment-info'">Manual Payment Instructions</button>
-        </div>
-        
-        <div style="margin-top: 30px;">
-            <button onclick="window.location.href='/'">← Back to Home</button>
-        </div>
-    </body>
-    </html>
-    ''')
 
 @app.route('/coinbase-webhook', methods=['POST'])
 def coinbase_webhook():
@@ -436,6 +386,21 @@ def verify_coinbase_webhook(payload, signature):
     
     return hmac.compare_digest(computed_signature, signature)
 
+
+@app.route('/coinbase-payment')
+def coinbase_payment():
+    log_activity("PAYMENT_ATTEMPT", "coinbase")
+    log_activity_to_db("PAYMENT_ATTEMPT", "coinbase")
+    
+    # Check if API key is properly configured
+    if not Config.COINBASE_API_KEY:
+        log_activity("PAYMENT_ERROR", "Coinbase API key not configured")
+        return render_template_string('''
+            <h3>⚠️ Payment System Configuration</h3>
+            <p>Coinbase payments are currently being configured.</p>
+            <p>Please use PayPal or manual crypto payment options for now.</p>
+            <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
+        ''')
 
 
 @app.route('/paypal-payment')
