@@ -383,7 +383,8 @@ def coinbase_payment():
             <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
         ''')
     
-    charge_data = {
+    # UPDATED: Use the new Checkout API instead of deprecated Charges API
+    checkout_data = {
         "name": "CryptoShield AI Premium",
         "description": "Monthly subscription - AI-powered crypto scam protection",
         "pricing_type": "fixed_price",
@@ -391,6 +392,7 @@ def coinbase_payment():
             "amount": "4.99",
             "currency": "USD"
         },
+        "requested_info": ["email"],
         "metadata": {
             "customer_id": "premium_user",
             "service": "cryptoshield_ai"
@@ -406,23 +408,26 @@ def coinbase_payment():
     }
     
     try:
+        # UPDATED: Use checkouts endpoint instead of charges
         response = requests.post(
-            "https://api.commerce.coinbase.com/charges",
-            json=charge_data,
+            "https://api.commerce.coinbase.com/checkouts",
+            json=checkout_data,
             headers=headers,
             timeout=30
         )
         
         if response.status_code == 201:
-            payment_info = response.json()
-            log_activity("PAYMENT_REDIRECT", "Redirecting to Coinbase payment")
-            return redirect(payment_info['data']['hosted_url'])
+            checkout_info = response.json()
+            log_activity("PAYMENT_REDIRECT", "Redirecting to Coinbase checkout")
+            # UPDATED: Use embed_url instead of hosted_url
+            return redirect(checkout_info['data']['embed_url'])
         else:
             log_activity("PAYMENT_ERROR", f"Coinbase API error: {response.status_code} - {response.text}")
             return render_template_string('''
-                <h3>⚠️ Payment System Temporarily Unavailable</h3>
+                <h3>⚠️ Payment System Update Required</h3>
+                <p>We're updating our payment system to use Coinbase's new API.</p>
+                <p>Please use manual crypto payment option for now.</p>
                 <p>Error: {{ error_code }} - {{ error_text }}</p>
-                <p>Please use manual crypto payment option above.</p>
                 <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
             ''', error_code=response.status_code, error_text=response.text)
             
@@ -434,7 +439,6 @@ def coinbase_payment():
             <p>Please use manual crypto payment option.</p>
             <button onclick="window.location.href='/premium'">← Back to Payment Options</button>
         ''', error=str(e))
-
 @app.route('/payment-cancel')
 def payment_cancel():
     log_activity("PAYMENT_CANCELLED", "User cancelled payment")
