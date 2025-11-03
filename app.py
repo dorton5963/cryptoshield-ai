@@ -374,6 +374,49 @@ def premium():
     </html>
     ''')
 
+@app.route('/coinbase-webhook', methods=['POST'])
+def coinbase_webhook():
+    # Verify webhook signature
+    signature = request.headers.get('X-CC-Webhook-Signature')
+    payload = request.get_data()
+    
+    # Verify the webhook came from Coinbase
+    if not verify_coinbase_webhook(payload, signature):
+        log_activity("WEBHOOK_SECURITY", "Invalid webhook signature")
+        return jsonify({'error': 'Invalid signature'}), 401
+    
+    data = request.json
+    event_type = data.get('event', {}).get('type')
+    
+    log_activity("WEBHOOK_RECEIVED", f"Event: {event_type}")
+    log_activity_to_db("WEBHOOK_RECEIVED", f"Event: {event_type}")
+    
+    if event_type == 'charge:confirmed':
+        log_activity("PAYMENT_CONFIRMED", "Webhook confirmation")
+        # Process successful payment
+        charge_data = data.get('event', {}).get('data', {})
+        process_payment_confirmation(charge_data)
+    
+    return jsonify({'status': 'success'})
+
+def verify_coinbase_webhook(payload, signature):
+    """Verify Coinbase webhook signature"""
+    import hmac
+    import hashlib
+    
+    if not Config.COINBASE_WEBHOOK_SECRET:
+        return True  # Skip verification if no secret set
+    
+    computed_signature = hmac.new(
+        Config.COINBASE_WEBHOOK_SECRET.encode('utf-8'),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(computed_signature, signature)
+
+
+
 @app.route('/paypal-payment')
 def paypal_payment():
     log_activity("PAYMENT_ATTEMPT", "paypal")
